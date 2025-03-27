@@ -25,32 +25,28 @@ detect_architecture() {
   case "$ARCH" in
     x86_64)
       LOCALAI_IMAGE="localai/localai:latest-aio-cpu"
+      PLATFORM_ARGS=""
       info "Detected x86_64 architecture, using $LOCALAI_IMAGE"
       ;;
     aarch64|arm64)
-      LOCALAI_IMAGE="localai/localai:latest-aio-cpu-arm64"
-      info "Detected ARM64 architecture, using $LOCALAI_IMAGE"
-      
-      # Fallback plan if ARM64 image doesn't exist
-      if ! docker pull "$LOCALAI_IMAGE" &>/dev/null; then
-        warn "ARM64-specific image not found. Trying to use platform specification instead."
+      # Try the ARM64-specific image first
+      if docker pull "localai/localai:latest-aio-cpu-arm64" &>/dev/null; then
+        LOCALAI_IMAGE="localai/localai:latest-aio-cpu-arm64"
+        PLATFORM_ARGS=""
+        info "Using ARM64-specific image: $LOCALAI_IMAGE"
+      else
+        # Fall back to AMD64 image with explicit platform
         LOCALAI_IMAGE="localai/localai:latest-aio-cpu"
-        PLATFORM_ARGS="--platform linux/arm64"
-        
-        # Install QEMU if needed and ensure binfmt_misc is properly configured
-        info "Setting up QEMU for architecture emulation..."
-        if ! command -v qemu-user-static &>/dev/null; then
-          apt-get update && apt-get install -y qemu-user-static
-        fi
-        # Always run this to ensure proper registration with the kernel
-        docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
-        
-        info "Using $LOCALAI_IMAGE with platform specification and emulation"
+        # When using amd64 image on arm64, always specify platform explicitly
+        PLATFORM_ARGS="--platform=linux/amd64"
+        info "ARM64-specific image not found, using $LOCALAI_IMAGE with emulation"
+        info "Platform arguments: $PLATFORM_ARGS"
       fi
       ;;
     *)
       warn "Unknown architecture: $ARCH, defaulting to amd64 image"
       LOCALAI_IMAGE="localai/localai:latest-aio-cpu"
+      PLATFORM_ARGS=""
       ;;
   esac
   
@@ -146,8 +142,11 @@ create_docker_compose() {
   
   # Set up platform specification for docker-compose if needed
   PLATFORM_SPEC=""
-  if [ -n "$PLATFORM_ARGS" ]; then
-    PLATFORM_SPEC="    platform: linux/arm64"
+  if [ -n "$PLATFORM_ARGS" ] && [[ "$PLATFORM_ARGS" == *"--platform="* ]]; then
+    # Extract the platform value from --platform= argument
+    PLATFORM_VALUE=$(echo "$PLATFORM_ARGS" | sed -E 's/.*--platform=([^ ]+).*/\1/')
+    PLATFORM_SPEC="    platform: $PLATFORM_VALUE"
+    info "Setting platform in docker-compose.yml: $PLATFORM_VALUE"
   fi
   
   cat > "$COMPOSE_FILE" << EOL
@@ -441,32 +440,28 @@ detect_architecture() {
   case "\$ARCH" in
     x86_64)
       LOCALAI_IMAGE="localai/localai:latest-aio-cpu"
+      PLATFORM_ARGS=""
       info "Detected x86_64 architecture, using \$LOCALAI_IMAGE"
       ;;
     aarch64|arm64)
-      LOCALAI_IMAGE="localai/localai:latest-aio-cpu-arm64"
-      info "Detected ARM64 architecture, using \$LOCALAI_IMAGE"
-      
-      # Fallback plan if ARM64 image doesn't exist
-      if ! docker pull "\$LOCALAI_IMAGE" &>/dev/null; then
-        warn "ARM64-specific image not found. Trying to use platform specification instead."
+      # Try the ARM64-specific image first
+      if docker pull "localai/localai:latest-aio-cpu-arm64" &>/dev/null; then
+        LOCALAI_IMAGE="localai/localai:latest-aio-cpu-arm64"
+        PLATFORM_ARGS=""
+        info "Using ARM64-specific image: \$LOCALAI_IMAGE"
+      else
+        # Fall back to AMD64 image with explicit platform
         LOCALAI_IMAGE="localai/localai:latest-aio-cpu"
-        PLATFORM_ARGS="--platform linux/arm64"
-        
-        # Install QEMU if needed and ensure binfmt_misc is properly configured
-        info "Setting up QEMU for architecture emulation..."
-        if ! command -v qemu-user-static &>/dev/null; then
-          apt-get update && apt-get install -y qemu-user-static
-        fi
-        # Always run this to ensure proper registration with the kernel
-        docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
-        
-        info "Using \$LOCALAI_IMAGE with platform specification and emulation"
+        # When using amd64 image on arm64, always specify platform explicitly
+        PLATFORM_ARGS="--platform=linux/amd64"
+        info "ARM64-specific image not found, using \$LOCALAI_IMAGE with emulation"
+        info "Platform arguments: \$PLATFORM_ARGS"
       fi
       ;;
     *)
       warn "Unknown architecture: \$ARCH, defaulting to amd64 image"
       LOCALAI_IMAGE="localai/localai:latest-aio-cpu"
+      PLATFORM_ARGS=""
       ;;
   esac
   
