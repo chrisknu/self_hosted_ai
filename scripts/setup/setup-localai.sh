@@ -25,12 +25,10 @@ detect_architecture() {
   case "$ARCH" in
     x86_64)
       LOCALAI_IMAGE="localai/localai:latest-aio-cpu"
-      QEMU_IMAGE="multiarch/qemu-user-static:latest"
       info "Detected x86_64 architecture, using $LOCALAI_IMAGE"
       ;;
     aarch64|arm64)
       LOCALAI_IMAGE="localai/localai:latest-aio-cpu-arm64"
-      QEMU_IMAGE="multiarch/qemu-user-static:latest-arm64"
       info "Detected ARM64 architecture, using $LOCALAI_IMAGE"
       
       # Fallback plan if ARM64 image doesn't exist
@@ -42,8 +40,8 @@ detect_architecture() {
         info "Setting up QEMU for architecture emulation..."
         apt-get update && apt-get install -y qemu-user-static
         
-        # Register QEMU in the kernel - use the same image pattern as we're using for localai
-        docker run --rm --privileged $QEMU_IMAGE --reset -p yes
+        # Register QEMU in the kernel - use just 'latest' tag as it's already multi-architecture
+        docker run --rm --privileged multiarch/qemu-user-static:latest --reset -p yes
         
         info "Using $LOCALAI_IMAGE with emulation"
       fi
@@ -51,7 +49,6 @@ detect_architecture() {
     *)
       warn "Unknown architecture: $ARCH, defaulting to amd64 image"
       LOCALAI_IMAGE="localai/localai:latest-aio-cpu"
-      QEMU_IMAGE="multiarch/qemu-user-static:latest"
       ;;
   esac
   
@@ -436,12 +433,10 @@ detect_architecture() {
   case "\$ARCH" in
     x86_64)
       LOCALAI_IMAGE="localai/localai:latest-aio-cpu"
-      QEMU_IMAGE="multiarch/qemu-user-static:latest"
       info "Detected x86_64 architecture, using \$LOCALAI_IMAGE"
       ;;
     aarch64|arm64)
       LOCALAI_IMAGE="localai/localai:latest-aio-cpu-arm64"
-      QEMU_IMAGE="multiarch/qemu-user-static:latest-arm64"
       info "Detected ARM64 architecture, using \$LOCALAI_IMAGE"
       
       # Fallback plan if ARM64 image doesn't exist
@@ -453,8 +448,8 @@ detect_architecture() {
         info "Setting up QEMU for architecture emulation..."
         apt-get update && apt-get install -y qemu-user-static
         
-        # Register QEMU in the kernel - use the same image pattern as we're using for localai
-        docker run --rm --privileged \$QEMU_IMAGE --reset -p yes
+        # Register QEMU in the kernel - use just 'latest' tag as it's already multi-architecture
+        docker run --rm --privileged multiarch/qemu-user-static:latest --reset -p yes
         
         info "Using \$LOCALAI_IMAGE with emulation"
       fi
@@ -462,7 +457,6 @@ detect_architecture() {
     *)
       warn "Unknown architecture: \$ARCH, defaulting to amd64 image"
       LOCALAI_IMAGE="localai/localai:latest-aio-cpu"
-      QEMU_IMAGE="multiarch/qemu-user-static:latest"
       ;;
   esac
   
