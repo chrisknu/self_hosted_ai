@@ -174,12 +174,18 @@ copy_scripts() {
   
   # Find and copy model scripts
   if [ -d "scripts/models" ]; then
-    cp scripts/models/download-cpu-optimized-models.sh "$LOCALAI_DIR/" 2>/dev/null || warn "Could not find download-cpu-optimized-models.sh"
+    # Use the fixed version of the download script
+    cp scripts/models/download-cpu-optimized-models-fixed.sh "$LOCALAI_DIR/download-cpu-optimized-models.sh" 2>/dev/null || cp scripts/models/download-cpu-optimized-models.sh "$LOCALAI_DIR/" 2>/dev/null || warn "Could not find download-cpu-optimized-models.sh"
     cp scripts/models/create-aliases.sh "$LOCALAI_DIR/" 2>/dev/null || warn "Could not find create-aliases.sh"
     cp scripts/models/auto-update-models.py "$LOCALAI_DIR/" 2>/dev/null || warn "Could not find auto-update-models.py"
     info "Copied model scripts from scripts/models/"
-  elif [ -f "download-cpu-optimized-models.sh" ]; then
-    cp download-cpu-optimized-models.sh "$LOCALAI_DIR/"
+  elif [ -f "download-cpu-optimized-models-fixed.sh" ] || [ -f "download-cpu-optimized-models.sh" ]; then
+    # Use the fixed version if available, otherwise use the original
+    if [ -f "download-cpu-optimized-models-fixed.sh" ]; then
+      cp download-cpu-optimized-models-fixed.sh "$LOCALAI_DIR/download-cpu-optimized-models.sh"
+    else
+      cp download-cpu-optimized-models.sh "$LOCALAI_DIR/"
+    fi
     cp create-aliases.sh "$LOCALAI_DIR/" 2>/dev/null || warn "Could not find create-aliases.sh"
     cp auto-update-models.py "$LOCALAI_DIR/" 2>/dev/null || warn "Could not find auto-update-models.py"
     info "Copied model scripts from root directory"
