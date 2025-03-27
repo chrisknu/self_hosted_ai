@@ -430,6 +430,9 @@ print_completion_message() {
   echo "To view logs:"
   echo "  cd $LOCALAI_DIR && docker-compose logs -f"
   echo ""
+  echo "To download CPU-optimized models:"
+  echo "  cd $LOCALAI_DIR && sudo ./download-cpu-optimized-models.sh"
+  echo ""
   if [ "$ENABLE_OAUTH" = false ]; then
     echo "To enable OAuth in the future:"
     echo "  1. Set ENABLE_OAUTH=true in $ENV_FILE"
@@ -440,6 +443,11 @@ print_completion_message() {
 
 create_management_scripts() {
   info "Creating management scripts..."
+  
+  # Copy the CPU-optimized models downloader
+  info "Setting up CPU-optimized models downloader..."
+  cp ../models/download-cpu-optimized-models-fixed.sh "$LOCALAI_DIR/download-cpu-optimized-models.sh"
+  chmod +x "$LOCALAI_DIR/download-cpu-optimized-models.sh"
   
   # Create update script
   cat > "$LOCALAI_DIR/update.sh" << 'EOL'
