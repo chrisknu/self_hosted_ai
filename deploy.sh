@@ -163,6 +163,7 @@ copy_scripts() {
   
   # Get the directory where this script is located
   DEPLOY_DIR="$(dirname "$(readlink -f "$0")")"
+  info "Deploy directory: $DEPLOY_DIR"
   
   # Find and copy setup script
   if [ -f "$DEPLOY_DIR/scripts/setup/setup-localai.sh" ]; then
@@ -176,41 +177,43 @@ copy_scripts() {
   fi
   
   # Find and copy model scripts
-  if [ -d "$DEPLOY_DIR/scripts/models" ]; then
-    # Use the fixed version of the download script
-    if [ -f "$DEPLOY_DIR/scripts/models/download-cpu-optimized-models-fixed.sh" ]; then
-      cp "$DEPLOY_DIR/scripts/models/download-cpu-optimized-models-fixed.sh" "$LOCALAI_DIR/download-cpu-optimized-models.sh"
-    elif [ -f "$DEPLOY_DIR/scripts/models/download-cpu-optimized-models.sh" ]; then
-      cp "$DEPLOY_DIR/scripts/models/download-cpu-optimized-models.sh" "$LOCALAI_DIR/download-cpu-optimized-models.sh"
-    else
-      warn "Could not find download-cpu-optimized-models.sh"
-    fi
-    
-    # Copy additional scripts if they exist
-    [ -f "$DEPLOY_DIR/scripts/models/create-aliases.sh" ] && cp "$DEPLOY_DIR/scripts/models/create-aliases.sh" "$LOCALAI_DIR/"
-    [ -f "$DEPLOY_DIR/scripts/models/auto-update-models.py" ] && cp "$DEPLOY_DIR/scripts/models/auto-update-models.py" "$LOCALAI_DIR/"
-    info "Copied model scripts from scripts/models/"
-  elif [ -f "$DEPLOY_DIR/download-cpu-optimized-models-fixed.sh" ] || [ -f "$DEPLOY_DIR/download-cpu-optimized-models.sh" ]; then
-    # Use the fixed version if available, otherwise use the original
-    if [ -f "$DEPLOY_DIR/download-cpu-optimized-models-fixed.sh" ]; then
-      cp "$DEPLOY_DIR/download-cpu-optimized-models-fixed.sh" "$LOCALAI_DIR/download-cpu-optimized-models.sh"
-    else
-      cp "$DEPLOY_DIR/download-cpu-optimized-models.sh" "$LOCALAI_DIR/"
-    fi
-    
-    # Copy additional scripts if they exist
-    [ -f "$DEPLOY_DIR/create-aliases.sh" ] && cp "$DEPLOY_DIR/create-aliases.sh" "$LOCALAI_DIR/"
-    [ -f "$DEPLOY_DIR/auto-update-models.py" ] && cp "$DEPLOY_DIR/auto-update-models.py" "$LOCALAI_DIR/"
-    info "Copied model scripts from root directory"
+  MODEL_SCRIPT_SOURCE=""
+  if [ -f "$DEPLOY_DIR/scripts/models/download-cpu-optimized-models.sh" ]; then
+    MODEL_SCRIPT_SOURCE="$DEPLOY_DIR/scripts/models/download-cpu-optimized-models.sh"
+    info "Found model script at: $MODEL_SCRIPT_SOURCE"
+  elif [ -f "$DEPLOY_DIR/download-cpu-optimized-models.sh" ]; then
+    MODEL_SCRIPT_SOURCE="$DEPLOY_DIR/download-cpu-optimized-models.sh"
+    info "Found model script at: $MODEL_SCRIPT_SOURCE"
   else
-    warn "Could not find model management scripts"
+    error "Could not find download-cpu-optimized-models.sh in any location"
   fi
   
-  # Make all scripts executable
-  find "$LOCALAI_DIR" -name "*.sh" -exec chmod +x {} \;
-  find "$LOCALAI_DIR" -name "*.py" -exec chmod +x {} \;
+  # Copy the model script
+  if [ -n "$MODEL_SCRIPT_SOURCE" ]; then
+    info "Copying model script from: $MODEL_SCRIPT_SOURCE"
+    cp "$MODEL_SCRIPT_SOURCE" "$LOCALAI_DIR/download-cpu-optimized-models.sh"
+    chmod +x "$LOCALAI_DIR/download-cpu-optimized-models.sh"
+    success "Copied and made executable: download-cpu-optimized-models.sh"
+  fi
+  
+  # Copy additional scripts if they exist
+  if [ -f "$DEPLOY_DIR/scripts/models/create-aliases.sh" ]; then
+    cp "$DEPLOY_DIR/scripts/models/create-aliases.sh" "$LOCALAI_DIR/"
+    chmod +x "$LOCALAI_DIR/create-aliases.sh"
+    success "Copied and made executable: create-aliases.sh"
+  fi
+  
+  if [ -f "$DEPLOY_DIR/scripts/models/auto-update-models.py" ]; then
+    cp "$DEPLOY_DIR/scripts/models/auto-update-models.py" "$LOCALAI_DIR/"
+    chmod +x "$LOCALAI_DIR/auto-update-models.py"
+    success "Copied and made executable: auto-update-models.py"
+  fi
   
   success "Scripts copied and made executable"
+  
+  # Verify the files were copied correctly
+  info "Verifying copied files:"
+  ls -l "$LOCALAI_DIR/"*.sh "$LOCALAI_DIR/"*.py 2>/dev/null || warn "No scripts found in $LOCALAI_DIR"
 }
 
 # Check internet connectivity

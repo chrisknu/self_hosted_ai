@@ -444,12 +444,6 @@ print_completion_message() {
 create_management_scripts() {
   info "Creating management scripts..."
   
-  # Copy the CPU-optimized models downloader
-  info "Setting up CPU-optimized models downloader..."
-  SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
-  cp "$SCRIPT_DIR/../models/download-cpu-optimized-models.sh" "$LOCALAI_DIR/download-cpu-optimized-models.sh"
-  chmod +x "$LOCALAI_DIR/download-cpu-optimized-models.sh"
-  
   # Create update script
   cat > "$LOCALAI_DIR/update.sh" << 'EOL'
 #!/bin/bash
