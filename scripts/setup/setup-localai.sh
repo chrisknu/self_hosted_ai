@@ -150,14 +150,14 @@ create_docker_compose() {
   fi
   
   cat > "$COMPOSE_FILE" << EOL
-version: '3.8'
+version: '3.7'
 
 services:
   localai:
     image: ${LOCALAI_IMAGE}
     container_name: localai
     restart: unless-stopped
-${PLATFORM_SPEC}
+$([ -n "$PLATFORM_SPEC" ] && echo "$PLATFORM_SPEC")
     ports:
       - "${DEFAULT_PORT}:8080"
     volumes:
@@ -169,15 +169,6 @@ ${PLATFORM_SPEC}
       - THREADS=4
       - DEBUG=false
       - CONTEXT_SIZE=2048
-    # Add resource limits - this is a comment
-    deploy:
-      resources:
-        limits:
-          cpus: '0.75'
-          memory: 4G
-        reservations:
-          cpus: '0.25'
-          memory: 2G
 EOL
 
   if [ -n "$API_KEY" ]; then
