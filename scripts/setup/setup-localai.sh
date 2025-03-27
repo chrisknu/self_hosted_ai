@@ -37,10 +37,12 @@ detect_architecture() {
         LOCALAI_IMAGE="localai/localai:latest-aio-cpu"
         PLATFORM_ARGS="--platform linux/arm64"
         
-        # Install QEMU for emulation if ARM64-specific image not found
-        info "Installing QEMU for architecture emulation..."
-        apt-get update && apt-get install -y qemu-user-static
-        docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
+        # Check if QEMU is installed
+        if ! command -v qemu-x86_64-static &>/dev/null; then
+          info "Installing QEMU for architecture emulation..."
+          apt-get update && apt-get install -y qemu-user-static
+          docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
+        fi
         
         info "Using $LOCALAI_IMAGE with platform specification and emulation"
       fi
