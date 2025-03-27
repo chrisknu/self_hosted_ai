@@ -31,16 +31,14 @@ detect_architecture() {
       # Try ARM64-specific image first
       if docker pull "localai/localai:latest-aio-cpu-arm64" &>/dev/null; then
         LOCALAI_IMAGE="localai/localai:latest-aio-cpu-arm64"
+        PLATFORM_ARGS=""
         info "Using ARM64-specific image: $LOCALAI_IMAGE"
       else
-        # Fall back to standard image - Docker will handle architecture translation if possible
+        # Fall back to standard image with explicit platform flag
         LOCALAI_IMAGE="localai/localai:latest-aio-cpu"
-        info "ARM64-specific image not found. Using standard image: $LOCALAI_IMAGE"
-        
-        # Check if we can run this image on this architecture
-        if ! docker run --rm --entrypoint="/bin/sh" "$LOCALAI_IMAGE" -c "exit 0" &>/dev/null; then
-          warn "The standard image may not be compatible with ARM64. Proceeding anyway, but you may encounter issues."
-        fi
+        PLATFORM_ARGS="--platform=linux/amd64"
+        info "ARM64-specific image not found. Using standard image with emulation: $LOCALAI_IMAGE"
+        info "Setting explicit platform flag: $PLATFORM_ARGS"
       fi
       ;;
     *)
@@ -49,8 +47,10 @@ detect_architecture() {
       ;;
   esac
   
-  # PLATFORM_ARGS no longer needed as we're using architecture-specific images
-  PLATFORM_ARGS=""
+  # For x86_64, default platform args are empty
+  if [ "$ARCH" = "x86_64" ]; then
+    PLATFORM_ARGS=""
+  fi
   success "Architecture detection complete"
 }
 
@@ -138,7 +138,16 @@ create_directory_structure() {
 create_docker_compose() {
   info "Creating docker-compose.yml..."
   
-  # No platform specification needed as we're using architecture-specific images
+  # Set up platform specification for docker-compose if needed
+  PLATFORM_SPEC=""
+  if [ -n "$PLATFORM_ARGS" ]; then
+    # Extract platform value
+    PLATFORM_VALUE=$(echo "$PLATFORM_ARGS" | grep -o 'linux/[^ "]*')
+    if [ -n "$PLATFORM_VALUE" ]; then
+      PLATFORM_SPEC="    platform: $PLATFORM_VALUE"
+      info "Adding platform specification to docker-compose.yml: $PLATFORM_VALUE"
+    fi
+  fi
   
   cat > "$COMPOSE_FILE" << EOL
 version: '3.8'
@@ -148,6 +157,7 @@ services:
     image: ${LOCALAI_IMAGE}
     container_name: localai
     restart: unless-stopped
+${PLATFORM_SPEC}
     ports:
       - "${DEFAULT_PORT}:8080"
     volumes:
@@ -436,16 +446,14 @@ detect_architecture() {
       # Try ARM64-specific image first
       if docker pull "localai/localai:latest-aio-cpu-arm64" &>/dev/null; then
         LOCALAI_IMAGE="localai/localai:latest-aio-cpu-arm64"
+        PLATFORM_ARGS=""
         info "Using ARM64-specific image: \$LOCALAI_IMAGE"
       else
-        # Fall back to standard image - Docker will handle architecture translation if possible
+        # Fall back to standard image with explicit platform flag
         LOCALAI_IMAGE="localai/localai:latest-aio-cpu"
-        info "ARM64-specific image not found. Using standard image: \$LOCALAI_IMAGE"
-        
-        # Check if we can run this image on this architecture
-        if ! docker run --rm --entrypoint="/bin/sh" "\$LOCALAI_IMAGE" -c "exit 0" &>/dev/null; then
-          warn "The standard image may not be compatible with ARM64. Proceeding anyway, but you may encounter issues."
-        fi
+        PLATFORM_ARGS="--platform=linux/amd64"
+        info "ARM64-specific image not found. Using standard image with emulation: \$LOCALAI_IMAGE"
+        info "Setting explicit platform flag: \$PLATFORM_ARGS"
       fi
       ;;
     *)
@@ -454,8 +462,10 @@ detect_architecture() {
       ;;
   esac
   
-  # PLATFORM_ARGS no longer needed as we're using architecture-specific images
-  PLATFORM_ARGS=""
+  # For x86_64, default platform args are empty
+  if [ "\$ARCH" = "x86_64" ]; then
+    PLATFORM_ARGS=""
+  fi
   success "Architecture detection complete"
 }
 
