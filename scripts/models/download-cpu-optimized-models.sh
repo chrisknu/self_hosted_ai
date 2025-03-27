@@ -1,4 +1,36 @@
-#!/bin/bash
+# Function to directly download from HuggingFace
+download_from_huggingface() {
+  local model_name=$1
+  local huggingface_url=$2
+  local model_file="$MODELS_DIR/$model_name.gguf"
+  
+  # Check if the model file already exists
+  if [ -f "$model_file" ]; then
+    info "Model $model_name already exists at $model_file, skipping download"
+    return 0
+  fi
+  
+  # Extract HuggingFace path components
+  # Format: huggingface://user/repo/filename
+  local hf_path=${huggingface_url#huggingface://}
+  local user=$(echo "$hf_path" | cut -d'/' -f1)
+  local repo=$(echo "$hf_path" | cut -d'/' -f2)
+  local filename=$(echo "$hf_path" | cut -d'/' -f3-)
+  
+  # Construct the direct download URL
+  local download_url="https://huggingface.co/$user/$repo/resolve/main/$filename"
+  
+  info "Downloading $model_name directly from HuggingFace: $download_url"
+  
+  # Download with progress using curl
+  if curl -L --progress-bar "$download_url" -o "$model_file"; then
+    success "Downloaded $model_name successfully"
+    return 0
+  else
+    warn "Failed to download $model_name, but continuing with other models"
+    return 1
+  fi
+}#!/bin/bash
 # Script to download a curated set of CPU-optimized models for LocalAI
 
 set -e
@@ -15,6 +47,34 @@ info() { echo -e "${BLUE}[INFO]${NC} $1"; }
 success() { echo -e "${GREEN}[SUCCESS]${NC} $1"; }
 warn() { echo -e "${YELLOW}[WARNING]${NC} $1"; }
 error() { echo -e "${RED}[ERROR]${NC} $1"; exit 1; }
+
+# Function to directly download from HuggingFace
+download_from_huggingface() {
+  local model_name=$1
+  local huggingface_url=$2
+  local model_filename="$model_name.gguf"
+  
+  # Extract HuggingFace path components
+  # Format: huggingface://user/repo/filename
+  local hf_path=${huggingface_url#huggingface://}
+  local user=$(echo "$hf_path" | cut -d'/' -f1)
+  local repo=$(echo "$hf_path" | cut -d'/' -f2)
+  local filename=$(echo "$hf_path" | cut -d'/' -f3-)
+  
+  # Construct the direct download URL
+  local download_url="https://huggingface.co/$user/$repo/resolve/main/$filename"
+  
+  info "Downloading $model_name directly from HuggingFace: $download_url"
+  
+  # Download with progress using curl
+  if curl -L --progress-bar "$download_url" -o "$MODELS_DIR/$model_filename"; then
+    success "Downloaded $model_name successfully"
+    return 0
+  else
+    warn "Failed to download $model_name, but continuing with other models"
+    return 1
+  fi
+}
 
 # Detect system architecture and set appropriate image tag
 detect_architecture() {
@@ -177,18 +237,30 @@ for model_entry in "${MODELS[@]}"; do
   
   info "Downloading $model_name from $model_url"
   
-  # Use secure Docker run command with appropriate limitations
-  if ! docker run --rm \
-    --security-opt no-new-privileges=true \
-    --cap-drop ALL \
-    $PLATFORM_ARGS \
-    -v "$MODELS_DIR:/models" \
-    $LOCALAI_IMAGE \
-    local-ai run "$model_url" --models-path=/models --model-name="$model_name.gguf"; then
-    
-    warn "Failed to download $model_name, but continuing with other models"
+  # Check if it's a HuggingFace URL
+  if [[ "$model_url" == huggingface://* ]]; then
+    download_from_huggingface "$model_name" "$model_url"
+    download_success=$?
   else
-    success "Downloaded $model_name successfully"
+    # For non-HuggingFace URLs, use the Docker method
+    docker run --rm \
+      --security-opt no-new-privileges=true \
+      --cap-drop ALL \
+      $PLATFORM_ARGS \
+      -v "$MODELS_DIR:/models" \
+      $LOCALAI_IMAGE \
+      local-ai run "$model_url" --models-path=/models --model-name="$model_name.gguf"
+    
+    download_success=$?
+    if [ $download_success -ne 0 ]; then
+      warn "Failed to download $model_name, but continuing with other models"
+    else
+      success "Downloaded $model_name successfully"
+    fi
+  fi
+  
+  # If download was successful, create the config file
+  if [ $download_success -eq 0 ]; then
     
     # Create configuration YAML if it doesn't exist
     if [ ! -f "$CONFIG_DIR/$model_name.yaml" ]; then
@@ -240,18 +312,30 @@ if [ "$DOWNLOAD_LARGE" = true ]; then
     
     info "Downloading $model_name from $model_url"
     
-    # Use secure Docker run command with appropriate limitations
-    if ! docker run --rm \
-      --security-opt no-new-privileges=true \
-      --cap-drop ALL \
-      $PLATFORM_ARGS \
-      -v "$MODELS_DIR:/models" \
-      $LOCALAI_IMAGE \
-      local-ai run "$model_url" --models-path=/models --model-name="$model_name.gguf"; then
-      
-      warn "Failed to download $model_name, but continuing with other models"
+    # Check if it's a HuggingFace URL
+    if [[ "$model_url" == huggingface://* ]]; then
+      download_from_huggingface "$model_name" "$model_url"
+      download_success=$?
     else
-      success "Downloaded $model_name successfully"
+      # For non-HuggingFace URLs, use the Docker method
+      docker run --rm \
+        --security-opt no-new-privileges=true \
+        --cap-drop ALL \
+        $PLATFORM_ARGS \
+        -v "$MODELS_DIR:/models" \
+        $LOCALAI_IMAGE \
+        local-ai run "$model_url" --models-path=/models --model-name="$model_name.gguf"
+      
+      download_success=$?
+      if [ $download_success -ne 0 ]; then
+        warn "Failed to download $model_name, but continuing with other models"
+      else
+        success "Downloaded $model_name successfully"
+      fi
+    fi
+    
+    # If download was successful, create the config file
+    if [ $download_success -eq 0 ]; then
       
       # Create configuration YAML if it doesn't exist
       if [ ! -f "$CONFIG_DIR/$model_name.yaml" ]; then
@@ -290,6 +374,7 @@ template:
 EOL
         success "Created configuration for $model_name"
       fi
+    fi
     fi
   done
 fi

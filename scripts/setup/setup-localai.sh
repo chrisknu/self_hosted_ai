@@ -282,6 +282,13 @@ download_models() {
   download_from_huggingface() {
     local model_name=$1
     local huggingface_url=$2
+    local model_file="$MODELS_DIR/$model_name.gguf"
+    
+    # Check if the model file already exists
+    if [ -f "$model_file" ]; then
+      info "Model $model_name already exists at $model_file, skipping download"
+      return 0
+    fi
     
     # Extract HuggingFace path components
     # Format: huggingface://user/repo/filename
@@ -296,7 +303,7 @@ download_models() {
     info "Downloading $model_name directly from HuggingFace: $download_url"
     
     # Download with progress using curl
-    if curl -L --progress-bar "$download_url" -o "$MODELS_DIR/$model_name.gguf"; then
+    if curl -L --progress-bar "$download_url" -o "$model_file"; then
       success "Downloaded $model_name"
       return 0
     else
@@ -316,20 +323,24 @@ download_models() {
     if [[ "$model_url" == huggingface://* ]]; then
       download_from_huggingface "$model_name" "$model_url"
     else
-      # For non-HuggingFace URLs, use the original Docker method
-      # Use the architecture-specific image
-      docker run --rm \
-        --security-opt no-new-privileges=true \
-        --cap-drop ALL \
-        $PLATFORM_ARGS \
-        -v "$MODELS_DIR:/models" \
-        $LOCALAI_IMAGE \
-        local-ai run "$model_url" --models-path=/models --model-name="$model_name.gguf"
-      
-      if [ $? -ne 0 ]; then
-        warn "Failed to download $model_name, but continuing with setup"
+      # For non-HuggingFace URLs, check if the model already exists
+      if [ -f "$MODELS_DIR/$model_name.gguf" ]; then
+        info "Model $model_name already exists, skipping download"
       else
-        success "Downloaded $model_name"
+        # Use the architecture-specific image
+        docker run --rm \
+          --security-opt no-new-privileges=true \
+          --cap-drop ALL \
+          $PLATFORM_ARGS \
+          -v "$MODELS_DIR:/models" \
+          $LOCALAI_IMAGE \
+          local-ai run "$model_url" --models-path=/models --model-name="$model_name.gguf"
+        
+        if [ $? -ne 0 ]; then
+          warn "Failed to download $model_name, but continuing with setup"
+        else
+          success "Downloaded $model_name"
+        fi
       fi
     fi
   done
@@ -348,12 +359,19 @@ download_models() {
       
       # For Llama 3 models, we can construct the download URL
       model_filename="${default_model_name}-${default_model_type}.gguf"
-      download_url="https://huggingface.co/localai/llama/resolve/main/$model_filename"
+      model_file="$MODELS_DIR/$model_filename"
       
-      if curl -L --progress-bar "$download_url" -o "$MODELS_DIR/$model_filename"; then
-        success "Downloaded default model: $model_filename"
+      # Check if the file already exists
+      if [ -f "$model_file" ]; then
+        info "Default model already exists at $model_file, skipping download"
       else
-        warn "Failed to download default model, but continuing with setup"
+        download_url="https://huggingface.co/localai/llama/resolve/main/$model_filename"
+        
+        if curl -L --progress-bar "$download_url" -o "$model_file"; then
+          success "Downloaded default model: $model_filename"
+        else
+          warn "Failed to download default model, but continuing with setup"
+        fi
       fi
     else
       # Fall back to the Docker method
