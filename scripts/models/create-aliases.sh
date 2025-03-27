@@ -18,6 +18,49 @@ success() { echo -e "${GREEN}[SUCCESS]${NC} $1"; }
 warn() { echo -e "${YELLOW}[WARNING]${NC} $1"; }
 error() { echo -e "${RED}[ERROR]${NC} $1"; exit 1; }
 
+# Detect system architecture and set appropriate image tag
+detect_architecture() {
+  info "Detecting system architecture..."
+  
+  # Get architecture using uname
+  ARCH=$(uname -m)
+  
+  # Set the appropriate image tag based on architecture
+  case "$ARCH" in
+    x86_64)
+      LOCALAI_IMAGE="localai/localai:latest-aio-cpu"
+      info "Detected x86_64 architecture, using $LOCALAI_IMAGE"
+      ;;
+    aarch64|arm64)
+      LOCALAI_IMAGE="localai/localai:latest-aio-cpu-arm64"
+      info "Detected ARM64 architecture, using $LOCALAI_IMAGE"
+      
+      # Fallback plan if ARM64 image doesn't exist
+      if ! docker pull "$LOCALAI_IMAGE" &>/dev/null; then
+        warn "ARM64-specific image not found. Trying to use platform specification instead."
+        LOCALAI_IMAGE="localai/localai:latest-aio-cpu"
+        PLATFORM_ARGS="--platform linux/arm64"
+        
+        # Install QEMU for emulation if ARM64-specific image not found
+        info "Installing QEMU for architecture emulation..."
+        apt-get update && apt-get install -y qemu-user-static
+        docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
+        
+        info "Using $LOCALAI_IMAGE with platform specification and emulation"
+      fi
+      ;;
+    *)
+      warn "Unknown architecture: $ARCH, defaulting to amd64 image"
+      LOCALAI_IMAGE="localai/localai:latest-aio-cpu"
+      ;;
+  esac
+  
+  # Set default platform args if not set
+  PLATFORM_ARGS=${PLATFORM_ARGS:-""}
+  
+  success "Architecture detection complete"
+}
+
 # Configuration
 LOCALAI_DIR="/opt/localai"
 CONFIG_DIR="$LOCALAI_DIR/config"
@@ -27,6 +70,9 @@ MODELS_DIR="$LOCALAI_DIR/models"
 if [ "$EUID" -ne 0 ]; then
   error "Please run as root or with sudo"
 fi
+
+# Detect architecture
+detect_architecture
 
 # Check if LocalAI installation exists
 if [ ! -d "$CONFIG_DIR" ]; then
@@ -268,6 +314,9 @@ info "Restarting LocalAI to apply changes..."
 cd "$LOCALAI_DIR" && docker-compose restart localai
 
 success "Model aliases created successfully!"
+echo ""
+echo "System architecture: $ARCH"
+echo "LocalAI image used: $LOCALAI_IMAGE"
 echo ""
 echo "You can now use these OpenAI-compatible model names in your API calls:"
 if [ -n "$GPT35_MODEL" ]; then echo "- gpt-3.5-turbo -> points to $GPT35_MODEL"; fi

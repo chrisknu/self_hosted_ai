@@ -14,6 +14,49 @@ success() { echo -e "${GREEN}[SUCCESS]${NC} $1"; }
 warn() { echo -e "${YELLOW}[WARNING]${NC} $1"; }
 error() { echo -e "${RED}[ERROR]${NC} $1"; exit 1; }
 
+# Detect system architecture and set appropriate image tag
+detect_architecture() {
+  info "Detecting system architecture..."
+  
+  # Get architecture using uname
+  ARCH=$(uname -m)
+  
+  # Set the appropriate image tag based on architecture
+  case "$ARCH" in
+    x86_64)
+      LOCALAI_IMAGE="localai/localai:latest-aio-cpu"
+      info "Detected x86_64 architecture, using $LOCALAI_IMAGE"
+      ;;
+    aarch64|arm64)
+      LOCALAI_IMAGE="localai/localai:latest-aio-cpu-arm64"
+      info "Detected ARM64 architecture, using $LOCALAI_IMAGE"
+      
+      # Fallback plan if ARM64 image doesn't exist
+      if ! docker pull "$LOCALAI_IMAGE" &>/dev/null; then
+        warn "ARM64-specific image not found. Trying to use platform specification instead."
+        LOCALAI_IMAGE="localai/localai:latest-aio-cpu"
+        PLATFORM_ARGS="--platform linux/arm64"
+        
+        # Install QEMU for emulation if ARM64-specific image not found
+        info "Installing QEMU for architecture emulation..."
+        apt-get update && apt-get install -y qemu-user-static
+        docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
+        
+        info "Using $LOCALAI_IMAGE with platform specification and emulation"
+      fi
+      ;;
+    *)
+      warn "Unknown architecture: $ARCH, defaulting to amd64 image"
+      LOCALAI_IMAGE="localai/localai:latest-aio-cpu"
+      ;;
+  esac
+  
+  # Set default platform args if not set
+  PLATFORM_ARGS=${PLATFORM_ARGS:-""}
+  
+  success "Architecture detection complete"
+}
+
 # Check if running as root
 if [ "$EUID" -ne 0 ]; then
   error "Please run as root or with sudo"
@@ -98,14 +141,21 @@ create_directory_structure() {
 create_docker_compose() {
   info "Creating docker-compose.yml..."
   
+  # Set up platform specification for docker-compose if needed
+  PLATFORM_SPEC=""
+  if [ -n "$PLATFORM_ARGS" ]; then
+    PLATFORM_SPEC="    platform: linux/arm64"
+  fi
+  
   cat > "$COMPOSE_FILE" << EOL
 version: '3.8'
 
 services:
   localai:
-    image: localai/localai:latest-aio-cpu
+    image: ${LOCALAI_IMAGE}
     container_name: localai
     restart: unless-stopped
+${PLATFORM_SPEC}
     ports:
       - "${DEFAULT_PORT}:8080"
     volumes:
@@ -219,11 +269,11 @@ template:
       <s>{{- if .System }}
       {{.System}}
       {{- end }}
-      {{- range $i, $message := .Messages }}
-      {{- if eq $message.Role "user" }}
-      [INST] {{ $message.Content }} [/INST]
-      {{- else if eq $message.Role "assistant" }}
-      {{ $message.Content }}
+      {{- range \$i, \$message := .Messages }}
+      {{- if eq \$message.Role "user" }}
+      [INST] {{ \$message.Content }} [/INST]
+      {{- else if eq \$message.Role "assistant" }}
+      {{ \$message.Content }}
       {{- end }}
       {{- end }}
 EOL
@@ -241,12 +291,13 @@ download_models() {
     model_url=$(echo $model_entry | cut -d: -f2-)
     
     info "Downloading $model_name from $model_url"
-    # Use a specific version of LocalAI for model downloads with security constraints
+    # Use the architecture-specific image for model downloads
     docker run --rm \
       --security-opt no-new-privileges=true \
       --cap-drop ALL \
+      $PLATFORM_ARGS \
       -v "$MODELS_DIR:/models" \
-      localai/localai:latest-aio-cpu \
+      $LOCALAI_IMAGE \
       local-ai run "$model_url" --models-path=/models --model-name="$model_name.gguf"
     
     if [ $? -ne 0 ]; then
@@ -259,12 +310,13 @@ download_models() {
   # Also download the default model if specified
   if [ -n "$DEFAULT_MODEL" ]; then
     info "Downloading default model: $DEFAULT_MODEL"
-    # Use a specific version with security constraints
+    # Use the architecture-specific image
     docker run --rm \
       --security-opt no-new-privileges=true \
       --cap-drop ALL \
+      $PLATFORM_ARGS \
       -v "$MODELS_DIR:/models" \
-      localai/localai:latest-aio-cpu \
+      $LOCALAI_IMAGE \
       local-ai run "$DEFAULT_MODEL" --models-path=/models 
   fi
   
@@ -303,6 +355,8 @@ print_completion_message() {
   echo ""
   echo "Configuration directory: $CONFIG_DIR"
   echo "Models directory: $MODELS_DIR"
+  echo "System architecture: $ARCH"
+  echo "LocalAI image used: $LOCALAI_IMAGE"
   echo ""
   echo "To start/stop the services:"
   echo "  cd $LOCALAI_DIR && docker-compose up -d"
@@ -355,26 +409,87 @@ echo "Update complete!"
 EOL
   chmod +x "$LOCALAI_DIR/update.sh"
   
-  # Create model management script
-  cat > "$LOCALAI_DIR/add-model.sh" << 'EOL'
+  # Create model management script - include architecture detection in this script too
+  cat > "$LOCALAI_DIR/add-model.sh" << EOL
 #!/bin/bash
 set -e
 
-MODELS_DIR="$(dirname "$0")/models"
-CONFIG_DIR="$(dirname "$0")/config"
+# Colors for terminal output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+BLUE='\033[0;36m'
+NC='\033[0m' # No Color
 
-if [ $# -lt 2 ]; then
-  echo "Usage: $0 MODEL_NAME MODEL_URL"
-  echo "Example: $0 llama-2-7b-chat huggingface://TheBloke/Llama-2-7B-Chat-GGUF/llama-2-7b-chat.Q4_K_M.gguf"
+# Print with colors
+info() { echo -e "\${BLUE}[INFO]\${NC} \$1"; }
+success() { echo -e "\${GREEN}[SUCCESS]\${NC} \$1"; }
+warn() { echo -e "\${YELLOW}[WARNING]\${NC} \$1"; }
+error() { echo -e "\${RED}[ERROR]\${NC} \$1"; exit 1; }
+
+# Detect system architecture and set appropriate image tag
+detect_architecture() {
+  info "Detecting system architecture..."
+  
+  # Get architecture using uname
+  ARCH=\$(uname -m)
+  
+  # Set the appropriate image tag based on architecture
+  case "\$ARCH" in
+    x86_64)
+      LOCALAI_IMAGE="localai/localai:latest-aio-cpu"
+      info "Detected x86_64 architecture, using \$LOCALAI_IMAGE"
+      ;;
+    aarch64|arm64)
+      LOCALAI_IMAGE="localai/localai:latest-aio-cpu-arm64"
+      info "Detected ARM64 architecture, using \$LOCALAI_IMAGE"
+      
+      # Fallback plan if ARM64 image doesn't exist
+      if ! docker pull "\$LOCALAI_IMAGE" &>/dev/null; then
+        warn "ARM64-specific image not found. Trying to use platform specification instead."
+        LOCALAI_IMAGE="localai/localai:latest-aio-cpu"
+        PLATFORM_ARGS="--platform linux/arm64"
+        
+        # Check if QEMU is installed
+        if ! command -v qemu-x86_64-static &>/dev/null; then
+          info "Installing QEMU for architecture emulation..."
+          apt-get update && apt-get install -y qemu-user-static
+          docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
+        fi
+        
+        info "Using \$LOCALAI_IMAGE with platform specification and emulation"
+      fi
+      ;;
+    *)
+      warn "Unknown architecture: \$ARCH, defaulting to amd64 image"
+      LOCALAI_IMAGE="localai/localai:latest-aio-cpu"
+      ;;
+  esac
+  
+  # Set default platform args if not set
+  PLATFORM_ARGS=\${PLATFORM_ARGS:-""}
+  
+  success "Architecture detection complete"
+}
+
+MODELS_DIR="\$(dirname "\$0")/models"
+CONFIG_DIR="\$(dirname "\$0")/config"
+
+# Detect the architecture
+detect_architecture
+
+if [ \$# -lt 2 ]; then
+  echo "Usage: \$0 MODEL_NAME MODEL_URL"
+  echo "Example: \$0 llama-2-7b-chat huggingface://TheBloke/Llama-2-7B-Chat-GGUF/llama-2-7b-chat.Q4_K_M.gguf"
   exit 1
 fi
 
-MODEL_NAME="$1"
-MODEL_URL="$2"
+MODEL_NAME="\$1"
+MODEL_URL="\$2"
 
-echo "Downloading model $MODEL_NAME from $MODEL_URL"
+echo "Downloading model \$MODEL_NAME from \$MODEL_URL"
 # Input validation
-if [[ ! "$MODEL_NAME" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+if [[ ! "\$MODEL_NAME" =~ ^[a-zA-Z0-9_-]+\$ ]]; then
   echo "Error: Model name can only contain alphanumeric characters, hyphens and underscores"
   exit 1
 fi
@@ -383,22 +498,23 @@ fi
 docker run --rm \
   --security-opt no-new-privileges=true \
   --cap-drop ALL \
-  -v "$MODELS_DIR:/models" \
-  localai/localai:latest-aio-cpu \
-  local-ai run "$MODEL_URL" --models-path=/models --model-name="$MODEL_NAME.gguf"
+  \$PLATFORM_ARGS \
+  -v "\$MODELS_DIR:/models" \
+  \$LOCALAI_IMAGE \
+  local-ai run "\$MODEL_URL" --models-path=/models --model-name="\$MODEL_NAME.gguf"
 
 # Verify file was downloaded successfully
-if [ ! -f "$MODELS_DIR/$MODEL_NAME.gguf" ]; then
+if [ ! -f "\$MODELS_DIR/\$MODEL_NAME.gguf" ]; then
   echo "Error: Failed to download model"
   exit 1
 fi
 
 # Create config
-cat > "$CONFIG_DIR/$MODEL_NAME.yaml" << EOF
-name: $MODEL_NAME
+cat > "\$CONFIG_DIR/\$MODEL_NAME.yaml" << EOF
+name: \$MODEL_NAME
 backend: llama-cpp
 parameters:
-  model: /models/$MODEL_NAME.gguf
+  model: /models/\$MODEL_NAME.gguf
   context_size: 2048
   threads: 4
   f16: true
@@ -408,17 +524,17 @@ template:
       <s>{{- if .System }}
       {{.System}}
       {{- end }}
-      {{- range \$i, \$message := .Messages }}
-      {{- if eq \$message.Role "user" }}
-      [INST] {{ \$message.Content }} [/INST]
-      {{- else if eq \$message.Role "assistant" }}
-      {{ \$message.Content }}
+      {{- range \\\$i, \\\$message := .Messages }}
+      {{- if eq \\\$message.Role "user" }}
+      [INST] {{ \\\$message.Content }} [/INST]
+      {{- else if eq \\\$message.Role "assistant" }}
+      {{ \\\$message.Content }}
       {{- end }}
       {{- end }}
 EOF
 
-echo "Model $MODEL_NAME added! Restart LocalAI for changes to take effect:"
-echo "cd $(dirname "$0") && docker-compose restart localai"
+echo "Model \$MODEL_NAME added! Restart LocalAI for changes to take effect:"
+echo "cd \$(dirname "\$0") && docker-compose restart localai"
 EOL
   chmod +x "$LOCALAI_DIR/add-model.sh"
   
@@ -428,6 +544,8 @@ EOL
 # Main installation flow
 print_banner
 check_dependencies
+# Detect system architecture before proceeding
+detect_architecture
 create_directory_structure
 create_docker_compose
 create_model_configs

@@ -16,6 +16,49 @@ success() { echo -e "${GREEN}[SUCCESS]${NC} $1"; }
 warn() { echo -e "${YELLOW}[WARNING]${NC} $1"; }
 error() { echo -e "${RED}[ERROR]${NC} $1"; exit 1; }
 
+# Detect system architecture and set appropriate image tag
+detect_architecture() {
+  info "Detecting system architecture..."
+  
+  # Get architecture using uname
+  ARCH=$(uname -m)
+  
+  # Set the appropriate image tag based on architecture
+  case "$ARCH" in
+    x86_64)
+      LOCALAI_IMAGE="localai/localai:latest-aio-cpu"
+      info "Detected x86_64 architecture, using $LOCALAI_IMAGE"
+      ;;
+    aarch64|arm64)
+      LOCALAI_IMAGE="localai/localai:latest-aio-cpu-arm64"
+      info "Detected ARM64 architecture, using $LOCALAI_IMAGE"
+      
+      # Fallback plan if ARM64 image doesn't exist
+      if ! docker pull "$LOCALAI_IMAGE" &>/dev/null; then
+        warn "ARM64-specific image not found. Trying to use platform specification instead."
+        LOCALAI_IMAGE="localai/localai:latest-aio-cpu"
+        PLATFORM_ARGS="--platform linux/arm64"
+        
+        # Install QEMU for emulation if ARM64-specific image not found
+        info "Installing QEMU for architecture emulation..."
+        apt-get update && apt-get install -y qemu-user-static
+        docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
+        
+        info "Using $LOCALAI_IMAGE with platform specification and emulation"
+      fi
+      ;;
+    *)
+      warn "Unknown architecture: $ARCH, defaulting to amd64 image"
+      LOCALAI_IMAGE="localai/localai:latest-aio-cpu"
+      ;;
+  esac
+  
+  # Set default platform args if not set
+  PLATFORM_ARGS=${PLATFORM_ARGS:-""}
+  
+  success "Architecture detection complete"
+}
+
 # Check if running as root
 if [ "$EUID" -ne 0 ]; then
   error "Please run as root or with sudo"
@@ -121,6 +164,9 @@ else
   DOWNLOAD_LARGE=false
 fi
 
+# Detect system architecture
+detect_architecture
+
 # Download models
 info "Starting download of CPU-optimized models..."
 cd "$LOCALAI_DIR"
@@ -135,8 +181,9 @@ for model_entry in "${MODELS[@]}"; do
   if ! docker run --rm \
     --security-opt no-new-privileges=true \
     --cap-drop ALL \
+    $PLATFORM_ARGS \
     -v "$MODELS_DIR:/models" \
-    localai/localai:latest-aio-cpu \
+    $LOCALAI_IMAGE \
     local-ai run "$model_url" --models-path=/models --model-name="$model_name.gguf"; then
     
     warn "Failed to download $model_name, but continuing with other models"
@@ -197,8 +244,9 @@ if [ "$DOWNLOAD_LARGE" = true ]; then
     if ! docker run --rm \
       --security-opt no-new-privileges=true \
       --cap-drop ALL \
+      $PLATFORM_ARGS \
       -v "$MODELS_DIR:/models" \
-      localai/localai:latest-aio-cpu \
+      $LOCALAI_IMAGE \
       local-ai run "$model_url" --models-path=/models --model-name="$model_name.gguf"; then
       
       warn "Failed to download $model_name, but continuing with other models"
@@ -304,6 +352,10 @@ if [ -f "$CONFIG_DIR/gpt-4.yaml" ]; then
 fi
 
 echo
+echo "System architecture: $ARCH"
+echo "LocalAI image used: $LOCALAI_IMAGE"
+echo
+
 echo "You can now use these models with LocalAI. Example:"
 echo "curl http://localhost:8080/v1/chat/completions \\"
 echo "  -H \"Content-Type: application/json\" \\"
