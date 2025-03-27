@@ -446,7 +446,8 @@ create_management_scripts() {
   
   # Copy the CPU-optimized models downloader
   info "Setting up CPU-optimized models downloader..."
-  cp ../models/download-cpu-optimized-models-fixed.sh "$LOCALAI_DIR/download-cpu-optimized-models.sh"
+  SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
+  cp "$SCRIPT_DIR/../models/download-cpu-optimized-models.sh" "$LOCALAI_DIR/download-cpu-optimized-models.sh"
   chmod +x "$LOCALAI_DIR/download-cpu-optimized-models.sh"
   
   # Create update script
