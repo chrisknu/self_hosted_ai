@@ -37,12 +37,13 @@ detect_architecture() {
         LOCALAI_IMAGE="localai/localai:latest-aio-cpu"
         PLATFORM_ARGS="--platform linux/arm64"
         
-        # Check if QEMU is installed
-        if ! command -v qemu-x86_64-static &>/dev/null; then
-          info "Installing QEMU for architecture emulation..."
+        # Install QEMU if needed and ensure binfmt_misc is properly configured
+        info "Setting up QEMU for architecture emulation..."
+        if ! command -v qemu-user-static &>/dev/null; then
           apt-get update && apt-get install -y qemu-user-static
-          docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
         fi
+        # Always run this to ensure proper registration with the kernel
+        docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
         
         info "Using $LOCALAI_IMAGE with platform specification and emulation"
       fi
@@ -452,12 +453,13 @@ detect_architecture() {
         LOCALAI_IMAGE="localai/localai:latest-aio-cpu"
         PLATFORM_ARGS="--platform linux/arm64"
         
-        # Check if QEMU is installed
-        if ! command -v qemu-x86_64-static &>/dev/null; then
-          info "Installing QEMU for architecture emulation..."
+        # Install QEMU if needed and ensure binfmt_misc is properly configured
+        info "Setting up QEMU for architecture emulation..."
+        if ! command -v qemu-user-static &>/dev/null; then
           apt-get update && apt-get install -y qemu-user-static
-          docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
         fi
+        # Always run this to ensure proper registration with the kernel
+        docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
         
         info "Using \$LOCALAI_IMAGE with platform specification and emulation"
       fi
