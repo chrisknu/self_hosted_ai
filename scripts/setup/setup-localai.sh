@@ -169,7 +169,7 @@ ${PLATFORM_SPEC}
       - THREADS=4
       - DEBUG=false
       - CONTEXT_SIZE=2048
-      # Add resource limits
+    # Add resource limits - this is a comment
     deploy:
       resources:
         limits:
