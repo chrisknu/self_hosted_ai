@@ -31,19 +31,9 @@ detect_architecture() {
       LOCALAI_IMAGE="localai/localai:latest-aio-cpu-arm64"
       info "Detected ARM64 architecture, using $LOCALAI_IMAGE"
       
-      # Fallback plan if ARM64 image doesn't exist
+      # Check if ARM64-specific image exists
       if ! docker pull "$LOCALAI_IMAGE" &>/dev/null; then
-        warn "ARM64-specific image not found. Falling back to amd64 image with emulation."
-        LOCALAI_IMAGE="localai/localai:latest-aio-cpu"
-        
-        # Install QEMU for emulation
-        info "Setting up QEMU for architecture emulation..."
-        apt-get update && apt-get install -y qemu-user-static
-        
-        # Register QEMU in the kernel - use just 'latest' tag as it's already multi-architecture
-        docker run --rm --privileged multiarch/qemu-user-static:latest --reset -p yes
-        
-        info "Using $LOCALAI_IMAGE with emulation"
+        error "ARM64-specific image not found. LocalAI does not currently support cross-architecture usage. Please use a native ARM64 image."
       fi
       ;;
     *)
@@ -439,19 +429,9 @@ detect_architecture() {
       LOCALAI_IMAGE="localai/localai:latest-aio-cpu-arm64"
       info "Detected ARM64 architecture, using \$LOCALAI_IMAGE"
       
-      # Fallback plan if ARM64 image doesn't exist
+      # Check if ARM64-specific image exists
       if ! docker pull "\$LOCALAI_IMAGE" &>/dev/null; then
-        warn "ARM64-specific image not found. Falling back to amd64 image with emulation."
-        LOCALAI_IMAGE="localai/localai:latest-aio-cpu"
-        
-        # Install QEMU for emulation
-        info "Setting up QEMU for architecture emulation..."
-        apt-get update && apt-get install -y qemu-user-static
-        
-        # Register QEMU in the kernel - use just 'latest' tag as it's already multi-architecture
-        docker run --rm --privileged multiarch/qemu-user-static:latest --reset -p yes
-        
-        info "Using \$LOCALAI_IMAGE with emulation"
+        error "ARM64-specific image not found. LocalAI does not currently support cross-architecture usage. Please use a native ARM64 image."
       fi
       ;;
     *)
