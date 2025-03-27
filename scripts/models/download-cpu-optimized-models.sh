@@ -62,7 +62,7 @@ download_model() {
     return $?
   elif [ "$CAN_USE_DOCKER" = false ]; then
     # For non-HuggingFace URLs when Docker can't be used
-    warn "Cannot download $model_url without Docker support. Skipping."
+    warn "Cannot download $model_name: URL $model_url requires Docker support. Skipping."
     return 1
   else
     # For non-HuggingFace URLs on supported platforms, use Docker
@@ -98,15 +98,9 @@ detect_architecture() {
       info "Detected x86_64 architecture, using $LOCALAI_IMAGE"
       ;;
     aarch64|arm64)
-      # For ARM64, check if ARM64-specific image exists
-      if docker pull "localai/localai:latest-aio-cpu-arm64" &>/dev/null; then
-        LOCALAI_IMAGE="localai/localai:latest-aio-cpu-arm64"
-        CAN_USE_DOCKER=true
-        info "Using ARM64-specific image: $LOCALAI_IMAGE"
-      else
-        warn "ARM64-specific image not found. Using direct downloads only."
-        CAN_USE_DOCKER=false
-      fi
+      # For ARM64, we'll use direct downloads only
+      warn "ARM64 architecture detected. Using direct downloads only."
+      CAN_USE_DOCKER=false
       ;;
     *)
       warn "Unknown architecture: $ARCH, using direct downloads only."
