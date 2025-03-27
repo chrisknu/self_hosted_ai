@@ -136,7 +136,7 @@ for model_entry in "${MODELS[@]}"; do
     --security-opt no-new-privileges=true \
     --cap-drop ALL \
     -v "$MODELS_DIR:/models" \
-    localai/localai:v2.12.0-cpu \
+    localai/localai:latest-aio-cpu \
     local-ai run "$model_url" --models-path=/models --model-name="$model_name.gguf"; then
     
     warn "Failed to download $model_name, but continuing with other models"
@@ -198,7 +198,7 @@ if [ "$DOWNLOAD_LARGE" = true ]; then
       --security-opt no-new-privileges=true \
       --cap-drop ALL \
       -v "$MODELS_DIR:/models" \
-      localai/localai:v2.12.0-cpu \
+      localai/localai:latest-aio-cpu \
       local-ai run "$model_url" --models-path=/models --model-name="$model_name.gguf"; then
       
       warn "Failed to download $model_name, but continuing with other models"

@@ -103,7 +103,7 @@ version: '3.8'
 
 services:
   localai:
-    image: localai/localai:v2.12.0-cpu
+    image: localai/localai:latest-aio-cpu
     container_name: localai
     restart: unless-stopped
     ports:
@@ -246,7 +246,7 @@ download_models() {
       --security-opt no-new-privileges=true \
       --cap-drop ALL \
       -v "$MODELS_DIR:/models" \
-      localai/localai:v2.12.0-cpu \
+      localai/localai:latest-aio-cpu \
       local-ai run "$model_url" --models-path=/models --model-name="$model_name.gguf"
     
     if [ $? -ne 0 ]; then
@@ -264,7 +264,7 @@ download_models() {
       --security-opt no-new-privileges=true \
       --cap-drop ALL \
       -v "$MODELS_DIR:/models" \
-      localai/localai:v2.12.0-cpu \
+      localai/localai:latest-aio-cpu \
       local-ai run "$DEFAULT_MODEL" --models-path=/models 
   fi
   
@@ -384,7 +384,7 @@ docker run --rm \
   --security-opt no-new-privileges=true \
   --cap-drop ALL \
   -v "$MODELS_DIR:/models" \
-  localai/localai:v2.12.0-cpu \
+  localai/localai:latest-aio-cpu \
   local-ai run "$MODEL_URL" --models-path=/models --model-name="$MODEL_NAME.gguf"
 
 # Verify file was downloaded successfully
