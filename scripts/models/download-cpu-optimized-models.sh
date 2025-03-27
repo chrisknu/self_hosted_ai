@@ -1,30 +1,22 @@
+#!/bin/bash
+# Script to download a curated set of CPU-optimized models for LocalAI
+
+set -e
+
+# Colors for terminal output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+BLUE='\033[0;36m'
+NC='\033[0m' # No Color
+
+# Print with colors
+info() { echo -e "${BLUE}[INFO]${NC} $1"; }
+success() { echo -e "${GREEN}[SUCCESS]${NC} $1"; }
+warn() { echo -e "${YELLOW}[WARNING]${NC} $1"; }
+error() { echo -e "${RED}[ERROR]${NC} $1"; exit 1; }
+
 # Function to directly download from HuggingFace
-download_from_huggingface() {
-  local model_name=$1
-  local huggingface_url=$2
-  local model_filename="$model_name.gguf"
-  
-  # Extract HuggingFace path components
-  # Format: huggingface://user/repo/filename
-  local hf_path=${huggingface_url#huggingface://}
-  local user=$(echo "$hf_path" | cut -d'/' -f1)
-  local repo=$(echo "$hf_path" | cut -d'/' -f2)
-  local filename=$(echo "$hf_path" | cut -d'/' -f3-)
-  
-  # Construct the direct download URL
-  local download_url="https://huggingface.co/$user/$repo/resolve/main/$filename"
-  
-  info "Downloading $model_name directly from HuggingFace: $download_url"
-  
-  # Download with progress using curl
-  if curl -L --progress-bar "$download_url" -o "$MODELS_DIR/$model_filename"; then
-    success "Downloaded $model_name successfully"
-    return 0
-  else
-    warn "Failed to download $model_name, but continuing with other models"
-    return 1
-  fi
-}# Function to directly download from HuggingFace
 download_from_huggingface() {
   local model_name=$1
   local huggingface_url=$2
@@ -56,50 +48,6 @@ download_from_huggingface() {
     warn "Failed to download $model_name, but continuing with other models"
     return 1
   fi
-}#!/bin/bash
-# Script to download a curated set of CPU-optimized models for LocalAI
-
-set -e
-
-# Colors for terminal output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[0;33m'
-BLUE='\033[0;36m'
-NC='\033[0m' # No Color
-
-# Print with colors
-info() { echo -e "${BLUE}[INFO]${NC} $1"; }
-success() { echo -e "${GREEN}[SUCCESS]${NC} $1"; }
-warn() { echo -e "${YELLOW}[WARNING]${NC} $1"; }
-error() { echo -e "${RED}[ERROR]${NC} $1"; exit 1; }
-
-# Function to directly download from HuggingFace
-download_from_huggingface() {
-  local model_name=$1
-  local huggingface_url=$2
-  local model_filename="$model_name.gguf"
-  
-  # Extract HuggingFace path components
-  # Format: huggingface://user/repo/filename
-  local hf_path=${huggingface_url#huggingface://}
-  local user=$(echo "$hf_path" | cut -d'/' -f1)
-  local repo=$(echo "$hf_path" | cut -d'/' -f2)
-  local filename=$(echo "$hf_path" | cut -d'/' -f3-)
-  
-  # Construct the direct download URL
-  local download_url="https://huggingface.co/$user/$repo/resolve/main/$filename"
-  
-  info "Downloading $model_name directly from HuggingFace: $download_url"
-  
-  # Download with progress using curl
-  if curl -L --progress-bar "$download_url" -o "$MODELS_DIR/$model_filename"; then
-    success "Downloaded $model_name successfully"
-    return 0
-  else
-    warn "Failed to download $model_name, but continuing with other models"
-    return 1
-  fi
 }
 
 # Function to handle model downloads based on architecture
@@ -107,17 +55,15 @@ download_model() {
   local model_name=$1
   local model_url=$2
   
-  # Check if it's a HuggingFace URL or if Docker can't be used
-  if [[ "$model_url" == huggingface://* ]] || [ "$CAN_USE_DOCKER" = false ]; then
+  # Check if it's a HuggingFace URL
+  if [[ "$model_url" == huggingface://* ]]; then
     # For HuggingFace URLs, always use direct download
-    if [[ "$model_url" == huggingface://* ]]; then
-      download_from_huggingface "$model_name" "$model_url"
-      return $?
-    else
-      # For non-HuggingFace URLs on platforms where Docker can't be used
-      warn "Cannot download $model_url without Docker support. Skipping."
-      return 1
-    fi
+    download_from_huggingface "$model_name" "$model_url"
+    return $?
+  elif [ "$CAN_USE_DOCKER" = false ]; then
+    # For non-HuggingFace URLs when Docker can't be used
+    warn "Cannot download $model_url without Docker support. Skipping."
+    return 1
   else
     # For non-HuggingFace URLs on supported platforms, use Docker
     docker run --rm \
