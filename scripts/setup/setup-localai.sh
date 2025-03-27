@@ -287,39 +287,93 @@ EOL
 download_models() {
   info "Setting up models (this may take some time)..."
   
-  # Use docker run to download models via LocalAI for simplicity
+  # Function to directly download from HuggingFace
+  download_from_huggingface() {
+    local model_name=$1
+    local huggingface_url=$2
+    
+    # Extract HuggingFace path components
+    # Format: huggingface://user/repo/filename
+    local hf_path=${huggingface_url#huggingface://}
+    local user=$(echo "$hf_path" | cut -d'/' -f1)
+    local repo=$(echo "$hf_path" | cut -d'/' -f2)
+    local filename=$(echo "$hf_path" | cut -d'/' -f3-)
+    
+    # Construct the direct download URL
+    local download_url="https://huggingface.co/$user/$repo/resolve/main/$filename"
+    
+    info "Downloading $model_name directly from HuggingFace: $download_url"
+    
+    # Download with progress using curl
+    if curl -L --progress-bar "$download_url" -o "$MODELS_DIR/$model_name.gguf"; then
+      success "Downloaded $model_name"
+      return 0
+    else
+      warn "Failed to download $model_name, but continuing with setup"
+      return 1
+    fi
+  }
+  
+  # Use direct download for HuggingFace URLs
   for model_entry in "${MODELS[@]}"; do
     model_name=$(echo $model_entry | cut -d: -f1)
     model_url=$(echo $model_entry | cut -d: -f2-)
     
     info "Downloading $model_name from $model_url"
-    # Use the architecture-specific image for model downloads
-    docker run --rm \
-      --security-opt no-new-privileges=true \
-      --cap-drop ALL \
-      $PLATFORM_ARGS \
-      -v "$MODELS_DIR:/models" \
-      $LOCALAI_IMAGE \
-      local-ai run "$model_url" --models-path=/models --model-name="$model_name.gguf"
     
-    if [ $? -ne 0 ]; then
-      warn "Failed to download $model_name, but continuing with setup"
+    # Check if it's a HuggingFace URL
+    if [[ "$model_url" == huggingface://* ]]; then
+      download_from_huggingface "$model_name" "$model_url"
     else
-      success "Downloaded $model_name"
+      # For non-HuggingFace URLs, use the original Docker method
+      # Use the architecture-specific image
+      docker run --rm \
+        --security-opt no-new-privileges=true \
+        --cap-drop ALL \
+        $PLATFORM_ARGS \
+        -v "$MODELS_DIR:/models" \
+        $LOCALAI_IMAGE \
+        local-ai run "$model_url" --models-path=/models --model-name="$model_name.gguf"
+      
+      if [ $? -ne 0 ]; then
+        warn "Failed to download $model_name, but continuing with setup"
+      else
+        success "Downloaded $model_name"
+      fi
     fi
   done
   
   # Also download the default model if specified
   if [ -n "$DEFAULT_MODEL" ]; then
     info "Downloading default model: $DEFAULT_MODEL"
-    # Use the architecture-specific image
-    docker run --rm \
-      --security-opt no-new-privileges=true \
-      --cap-drop ALL \
-      $PLATFORM_ARGS \
-      -v "$MODELS_DIR:/models" \
-      $LOCALAI_IMAGE \
-      local-ai run "$DEFAULT_MODEL" --models-path=/models 
+    
+    # Split the model specification
+    default_model_name=$(echo "$DEFAULT_MODEL" | cut -d: -f1)
+    default_model_type=$(echo "$DEFAULT_MODEL" | cut -d: -f2)
+    
+    # Check if it's a known standard model
+    if [[ "$default_model_name" == llama-3* ]]; then
+      info "Detected standard Llama 3 model, using direct download"
+      
+      # For Llama 3 models, we can construct the download URL
+      model_filename="${default_model_name}-${default_model_type}.gguf"
+      download_url="https://huggingface.co/localai/llama/resolve/main/$model_filename"
+      
+      if curl -L --progress-bar "$download_url" -o "$MODELS_DIR/$model_filename"; then
+        success "Downloaded default model: $model_filename"
+      else
+        warn "Failed to download default model, but continuing with setup"
+      fi
+    else
+      # Fall back to the Docker method
+      docker run --rm \
+        --security-opt no-new-privileges=true \
+        --cap-drop ALL \
+        $PLATFORM_ARGS \
+        -v "$MODELS_DIR:/models" \
+        $LOCALAI_IMAGE \
+        local-ai run "$DEFAULT_MODEL" --models-path=/models
+    fi
   fi
   
   success "Models downloaded"
@@ -484,6 +538,33 @@ fi
 MODEL_NAME="\$1"
 MODEL_URL="\$2"
 
+# Function to directly download from HuggingFace
+download_from_huggingface() {
+  local model_name=\$1
+  local huggingface_url=\$2
+  
+  # Extract HuggingFace path components
+  # Format: huggingface://user/repo/filename
+  local hf_path=\${huggingface_url#huggingface://}
+  local user=\$(echo "\$hf_path" | cut -d'/' -f1)
+  local repo=\$(echo "\$hf_path" | cut -d'/' -f2)
+  local filename=\$(echo "\$hf_path" | cut -d'/' -f3-)
+  
+  # Construct the direct download URL
+  local download_url="https://huggingface.co/\$user/\$repo/resolve/main/\$filename"
+  
+  echo "Downloading from HuggingFace: \$download_url"
+  
+  # Download with progress using curl
+  if curl -L --progress-bar "\$download_url" -o "\$MODELS_DIR/\$model_name.gguf"; then
+    echo "Successfully downloaded \$model_name"
+    return 0
+  else
+    echo "Error: Failed to download model"
+    exit 1
+  fi
+}
+
 echo "Downloading model \$MODEL_NAME from \$MODEL_URL"
 # Input validation
 if [[ ! "\$MODEL_NAME" =~ ^[a-zA-Z0-9_-]+\$ ]]; then
@@ -491,19 +572,25 @@ if [[ ! "\$MODEL_NAME" =~ ^[a-zA-Z0-9_-]+\$ ]]; then
   exit 1
 fi
 
-# Secure download with container security constraints
-docker run --rm \
-  --security-opt no-new-privileges=true \
-  --cap-drop ALL \
-  \$PLATFORM_ARGS \
-  -v "\$MODELS_DIR:/models" \
-  \$LOCALAI_IMAGE \
-  local-ai run "\$MODEL_URL" --models-path=/models --model-name="\$MODEL_NAME.gguf"
-
-# Verify file was downloaded successfully
-if [ ! -f "\$MODELS_DIR/\$MODEL_NAME.gguf" ]; then
-  echo "Error: Failed to download model"
-  exit 1
+# Check if it's a HuggingFace URL and download directly
+if [[ "\$MODEL_URL" == huggingface://* ]]; then
+  download_from_huggingface "\$MODEL_NAME" "\$MODEL_URL"
+else
+  # For non-HuggingFace URLs, use the Docker method
+  # Secure download with container security constraints
+  docker run --rm \
+    --security-opt no-new-privileges=true \
+    --cap-drop ALL \
+    \$PLATFORM_ARGS \
+    -v "\$MODELS_DIR:/models" \
+    \$LOCALAI_IMAGE \
+    local-ai run "\$MODEL_URL" --models-path=/models --model-name="\$MODEL_NAME.gguf"
+  
+  # Verify file was downloaded successfully
+  if [ ! -f "\$MODELS_DIR/\$MODEL_NAME.gguf" ]; then
+    echo "Error: Failed to download model"
+    exit 1
+  fi
 fi
 
 # Create config
