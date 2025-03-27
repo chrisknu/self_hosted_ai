@@ -28,12 +28,19 @@ detect_architecture() {
       info "Detected x86_64 architecture, using $LOCALAI_IMAGE"
       ;;
     aarch64|arm64)
-      LOCALAI_IMAGE="localai/localai:latest-aio-cpu-arm64"
-      info "Detected ARM64 architecture, using $LOCALAI_IMAGE"
-      
-      # Check if ARM64-specific image exists
-      if ! docker pull "$LOCALAI_IMAGE" &>/dev/null; then
-        error "ARM64-specific image not found. LocalAI does not currently support cross-architecture usage. Please use a native ARM64 image."
+      # Try ARM64-specific image first
+      if docker pull "localai/localai:latest-aio-cpu-arm64" &>/dev/null; then
+        LOCALAI_IMAGE="localai/localai:latest-aio-cpu-arm64"
+        info "Using ARM64-specific image: $LOCALAI_IMAGE"
+      else
+        # Fall back to standard image - Docker will handle architecture translation if possible
+        LOCALAI_IMAGE="localai/localai:latest-aio-cpu"
+        info "ARM64-specific image not found. Using standard image: $LOCALAI_IMAGE"
+        
+        # Check if we can run this image on this architecture
+        if ! docker run --rm --entrypoint="/bin/sh" "$LOCALAI_IMAGE" -c "exit 0" &>/dev/null; then
+          warn "The standard image may not be compatible with ARM64. Proceeding anyway, but you may encounter issues."
+        fi
       fi
       ;;
     *)
@@ -426,12 +433,19 @@ detect_architecture() {
       info "Detected x86_64 architecture, using \$LOCALAI_IMAGE"
       ;;
     aarch64|arm64)
-      LOCALAI_IMAGE="localai/localai:latest-aio-cpu-arm64"
-      info "Detected ARM64 architecture, using \$LOCALAI_IMAGE"
-      
-      # Check if ARM64-specific image exists
-      if ! docker pull "\$LOCALAI_IMAGE" &>/dev/null; then
-        error "ARM64-specific image not found. LocalAI does not currently support cross-architecture usage. Please use a native ARM64 image."
+      # Try ARM64-specific image first
+      if docker pull "localai/localai:latest-aio-cpu-arm64" &>/dev/null; then
+        LOCALAI_IMAGE="localai/localai:latest-aio-cpu-arm64"
+        info "Using ARM64-specific image: \$LOCALAI_IMAGE"
+      else
+        # Fall back to standard image - Docker will handle architecture translation if possible
+        LOCALAI_IMAGE="localai/localai:latest-aio-cpu"
+        info "ARM64-specific image not found. Using standard image: \$LOCALAI_IMAGE"
+        
+        # Check if we can run this image on this architecture
+        if ! docker run --rm --entrypoint="/bin/sh" "\$LOCALAI_IMAGE" -c "exit 0" &>/dev/null; then
+          warn "The standard image may not be compatible with ARM64. Proceeding anyway, but you may encounter issues."
+        fi
       fi
       ;;
     *)
