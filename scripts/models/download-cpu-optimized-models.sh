@@ -38,7 +38,11 @@ download_from_huggingface() {
   # Construct the direct download URL
   local download_url="https://huggingface.co/$user/$repo/resolve/main/$filename"
   
-  info "Downloading $model_name directly from HuggingFace: $download_url"
+  info "Downloading $model_name directly from HuggingFace..."
+  info "URL: $download_url"
+  
+  # Create models directory if it doesn't exist
+  mkdir -p "$MODELS_DIR"
   
   # Download with progress using curl
   if curl -L --progress-bar "$download_url" -o "$model_file"; then
@@ -55,9 +59,11 @@ download_model() {
   local model_name=$1
   local model_url=$2
   
+  info "Processing download for $model_name using URL: $model_url"
+  
   # Check if it's a HuggingFace URL
   if [[ "$model_url" == huggingface://* ]]; then
-    # For HuggingFace URLs, always use direct download
+    info "Detected HuggingFace URL, using direct download"
     download_from_huggingface "$model_name" "$model_url"
     return $?
   elif [ "$CAN_USE_DOCKER" = false ]; then
@@ -66,6 +72,7 @@ download_model() {
     return 1
   else
     # For non-HuggingFace URLs on supported platforms, use Docker
+    info "Using Docker to download $model_name"
     docker run --rm \
       --security-opt no-new-privileges=true \
       --cap-drop ALL \
@@ -135,7 +142,7 @@ MODELS=(
   "stablelm-2-1.6b:huggingface://TheBloke/StableLM-2-1.6B-GGUF/stablelm-2-1.6b.Q4_K_M.gguf:Stability AI's 1.6B parameter model:750"
 )
 
-# Larger models (optional - commented out by default)
+# Larger models (optional)
 LARGE_MODELS=(
   "llama-3.1-8b-instruct:huggingface://TheBloke/Llama-3.1-8B-Instruct-GGUF/llama-3.1-8b-instruct.Q4_K_M.gguf:Meta's Llama 3.1 8B instruction model - high quality but needs good CPU:4200"
   "mistral-7b-instruct:huggingface://TheBloke/Mistral-7B-Instruct-v0.2-GGUF/mistral-7b-instruct-v0.2.Q4_K_M.gguf:Mistral AI's 7B instruction model - high quality but needs good CPU:3800"
@@ -177,6 +184,7 @@ echo
 index=1
 for model_entry in "${MODELS[@]}"; do
   model_name=$(echo "$model_entry" | cut -d: -f1)
+  model_url=$(echo "$model_entry" | cut -d: -f2)
   model_description=$(echo "$model_entry" | cut -d: -f3)
   model_size=$(echo "$model_entry" | cut -d: -f4)
   echo -e "${BLUE}$index. ${NC}$model_name - $model_description (${model_size}MB)"
@@ -189,6 +197,7 @@ echo -e "${YELLOW}Optional larger models (require more CPU power)${NC}"
 # List large models
 for model_entry in "${LARGE_MODELS[@]}"; do
   model_name=$(echo "$model_entry" | cut -d: -f1)
+  model_url=$(echo "$model_entry" | cut -d: -f2)
   model_description=$(echo "$model_entry" | cut -d: -f3)
   model_size=$(echo "$model_entry" | cut -d: -f4)
   echo -e "${BLUE}$index. ${NC}$model_name - $model_description (${model_size}MB)"
