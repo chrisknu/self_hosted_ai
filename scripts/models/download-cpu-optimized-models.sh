@@ -2,6 +2,32 @@
 download_from_huggingface() {
   local model_name=$1
   local huggingface_url=$2
+  local model_filename="$model_name.gguf"
+  
+  # Extract HuggingFace path components
+  # Format: huggingface://user/repo/filename
+  local hf_path=${huggingface_url#huggingface://}
+  local user=$(echo "$hf_path" | cut -d'/' -f1)
+  local repo=$(echo "$hf_path" | cut -d'/' -f2)
+  local filename=$(echo "$hf_path" | cut -d'/' -f3-)
+  
+  # Construct the direct download URL
+  local download_url="https://huggingface.co/$user/$repo/resolve/main/$filename"
+  
+  info "Downloading $model_name directly from HuggingFace: $download_url"
+  
+  # Download with progress using curl
+  if curl -L --progress-bar "$download_url" -o "$MODELS_DIR/$model_filename"; then
+    success "Downloaded $model_name successfully"
+    return 0
+  else
+    warn "Failed to download $model_name, but continuing with other models"
+    return 1
+  fi
+}# Function to directly download from HuggingFace
+download_from_huggingface() {
+  local model_name=$1
+  local huggingface_url=$2
   local model_file="$MODELS_DIR/$model_name.gguf"
   
   # Check if the model file already exists
@@ -76,6 +102,41 @@ download_from_huggingface() {
   fi
 }
 
+# Function to handle model downloads based on architecture
+download_model() {
+  local model_name=$1
+  local model_url=$2
+  
+  # Check if it's a HuggingFace URL or if Docker can't be used
+  if [[ "$model_url" == huggingface://* ]] || [ "$CAN_USE_DOCKER" = false ]; then
+    # For HuggingFace URLs, always use direct download
+    if [[ "$model_url" == huggingface://* ]]; then
+      download_from_huggingface "$model_name" "$model_url"
+      return $?
+    else
+      # For non-HuggingFace URLs on platforms where Docker can't be used
+      warn "Cannot download $model_url without Docker support. Skipping."
+      return 1
+    fi
+  else
+    # For non-HuggingFace URLs on supported platforms, use Docker
+    docker run --rm \
+      --security-opt no-new-privileges=true \
+      --cap-drop ALL \
+      -v "$MODELS_DIR:/models" \
+      $LOCALAI_IMAGE \
+      local-ai run "$model_url" --models-path=/models --model-name="$model_name.gguf"
+    
+    if [ $? -ne 0 ]; then
+      warn "Failed to download $model_name, but continuing with other models"
+      return 1
+    else
+      success "Downloaded $model_name successfully"
+      return 0
+    fi
+  fi
+}
+
 # Detect system architecture and set appropriate image tag
 detect_architecture() {
   info "Detecting system architecture..."
@@ -87,34 +148,25 @@ detect_architecture() {
   case "$ARCH" in
     x86_64)
       LOCALAI_IMAGE="localai/localai:latest-aio-cpu"
+      CAN_USE_DOCKER=true
       info "Detected x86_64 architecture, using $LOCALAI_IMAGE"
       ;;
     aarch64|arm64)
-      LOCALAI_IMAGE="localai/localai:latest-aio-cpu-arm64"
-      info "Detected ARM64 architecture, using $LOCALAI_IMAGE"
-      
-      # Fallback plan if ARM64 image doesn't exist
-      if ! docker pull "$LOCALAI_IMAGE" &>/dev/null; then
-        warn "ARM64-specific image not found. Trying to use platform specification instead."
-        LOCALAI_IMAGE="localai/localai:latest-aio-cpu"
-        PLATFORM_ARGS="--platform linux/arm64"
-        
-        # Install QEMU for emulation if ARM64-specific image not found
-        info "Installing QEMU for architecture emulation..."
-        apt-get update && apt-get install -y qemu-user-static
-        docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
-        
-        info "Using $LOCALAI_IMAGE with platform specification and emulation"
+      # For ARM64, check if ARM64-specific image exists
+      if docker pull "localai/localai:latest-aio-cpu-arm64" &>/dev/null; then
+        LOCALAI_IMAGE="localai/localai:latest-aio-cpu-arm64"
+        CAN_USE_DOCKER=true
+        info "Using ARM64-specific image: $LOCALAI_IMAGE"
+      else
+        warn "ARM64-specific image not found. Using direct downloads only."
+        CAN_USE_DOCKER=false
       fi
       ;;
     *)
-      warn "Unknown architecture: $ARCH, defaulting to amd64 image"
-      LOCALAI_IMAGE="localai/localai:latest-aio-cpu"
+      warn "Unknown architecture: $ARCH, using direct downloads only."
+      CAN_USE_DOCKER=false
       ;;
   esac
-  
-  # Set default platform args if not set
-  PLATFORM_ARGS=${PLATFORM_ARGS:-""}
   
   success "Architecture detection complete"
 }
@@ -156,7 +208,7 @@ REQUIRED_SPACE=0
 
 # Calculate required space
 for model_entry in "${MODELS[@]}"; do
-  model_size=$(echo $model_entry | cut -d: -f4)
+  model_size=$(echo "$model_entry" | cut -d: -f4)
   REQUIRED_SPACE=$((REQUIRED_SPACE + model_size))
 done
 
@@ -184,9 +236,9 @@ echo
 # List models
 index=1
 for model_entry in "${MODELS[@]}"; do
-  model_name=$(echo $model_entry | cut -d: -f1)
-  model_description=$(echo $model_entry | cut -d: -f3)
-  model_size=$(echo $model_entry | cut -d: -f4)
+  model_name=$(echo "$model_entry" | cut -d: -f1)
+  model_description=$(echo "$model_entry" | cut -d: -f3)
+  model_size=$(echo "$model_entry" | cut -d: -f4)
   echo -e "${BLUE}$index. ${NC}$model_name - $model_description (${model_size}MB)"
   index=$((index + 1))
 done
@@ -196,9 +248,9 @@ echo -e "${YELLOW}Optional larger models (require more CPU power)${NC}"
 
 # List large models
 for model_entry in "${LARGE_MODELS[@]}"; do
-  model_name=$(echo $model_entry | cut -d: -f1)
-  model_description=$(echo $model_entry | cut -d: -f3)
-  model_size=$(echo $model_entry | cut -d: -f4)
+  model_name=$(echo "$model_entry" | cut -d: -f1)
+  model_description=$(echo "$model_entry" | cut -d: -f3)
+  model_size=$(echo "$model_entry" | cut -d: -f4)
   echo -e "${BLUE}$index. ${NC}$model_name - $model_description (${model_size}MB)"
   index=$((index + 1))
 done
@@ -232,32 +284,14 @@ info "Starting download of CPU-optimized models..."
 cd "$LOCALAI_DIR"
 
 for model_entry in "${MODELS[@]}"; do
-  model_name=$(echo $model_entry | cut -d: -f1)
-  model_url=$(echo $model_entry | cut -d: -f2)
+  model_name=$(echo "$model_entry" | cut -d: -f1)
+  model_url=$(echo "$model_entry" | cut -d: -f2)
   
   info "Downloading $model_name from $model_url"
   
-  # Check if it's a HuggingFace URL
-  if [[ "$model_url" == huggingface://* ]]; then
-    download_from_huggingface "$model_name" "$model_url"
-    download_success=$?
-  else
-    # For non-HuggingFace URLs, use the Docker method
-    docker run --rm \
-      --security-opt no-new-privileges=true \
-      --cap-drop ALL \
-      $PLATFORM_ARGS \
-      -v "$MODELS_DIR:/models" \
-      $LOCALAI_IMAGE \
-      local-ai run "$model_url" --models-path=/models --model-name="$model_name.gguf"
-    
-    download_success=$?
-    if [ $download_success -ne 0 ]; then
-      warn "Failed to download $model_name, but continuing with other models"
-    else
-      success "Downloaded $model_name successfully"
-    fi
-  fi
+  # Download the model using the appropriate method
+  download_model "$model_name" "$model_url"
+  download_success=$?
   
   # If download was successful, create the config file
   if [ $download_success -eq 0 ]; then
@@ -307,32 +341,14 @@ if [ "$DOWNLOAD_LARGE" = true ]; then
   info "Downloading larger models..."
   
   for model_entry in "${LARGE_MODELS[@]}"; do
-    model_name=$(echo $model_entry | cut -d: -f1)
-    model_url=$(echo $model_entry | cut -d: -f2)
+    model_name=$(echo "$model_entry" | cut -d: -f1)
+    model_url=$(echo "$model_entry" | cut -d: -f2)
     
     info "Downloading $model_name from $model_url"
     
-    # Check if it's a HuggingFace URL
-    if [[ "$model_url" == huggingface://* ]]; then
-      download_from_huggingface "$model_name" "$model_url"
-      download_success=$?
-    else
-      # For non-HuggingFace URLs, use the Docker method
-      docker run --rm \
-        --security-opt no-new-privileges=true \
-        --cap-drop ALL \
-        $PLATFORM_ARGS \
-        -v "$MODELS_DIR:/models" \
-        $LOCALAI_IMAGE \
-        local-ai run "$model_url" --models-path=/models --model-name="$model_name.gguf"
-      
-      download_success=$?
-      if [ $download_success -ne 0 ]; then
-        warn "Failed to download $model_name, but continuing with other models"
-      else
-        success "Downloaded $model_name successfully"
-      fi
-    fi
+    # Download the model using the appropriate method
+    download_model "$model_name" "$model_url"
+    download_success=$?
     
     # If download was successful, create the config file
     if [ $download_success -eq 0 ]; then
@@ -375,7 +391,6 @@ EOL
         success "Created configuration for $model_name"
       fi
     fi
-    fi
   done
 fi
 
@@ -408,9 +423,13 @@ elif [ -f "$CONFIG_DIR/orca-mini-3b-q4.yaml" ]; then
   success "Created gpt-4 alias (mapped to orca-mini-3b-q4)"
 fi
 
-# Restart LocalAI to apply changes
-info "Restarting LocalAI to apply changes..."
-docker-compose restart localai
+# Restart LocalAI to apply changes if Docker is available
+if [ "$CAN_USE_DOCKER" = true ]; then
+  info "Restarting LocalAI to apply changes..."
+  docker-compose restart localai
+else
+  warn "LocalAI not restarted - Docker support not available. Please restart manually if needed."
+fi
 
 echo
 echo -e "${GREEN}=========================================${NC}"
